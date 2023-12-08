@@ -1,7 +1,9 @@
 use dirs;
 use std::collections::HashSet;
+use std::fs;
 use std::io;
 use std::path::Path;
+use std::time::SystemTime;
 use walkdir::{DirEntry, WalkDir};
 
 fn main() -> io::Result<()> {
@@ -23,7 +25,9 @@ fn main() -> io::Result<()> {
             if visited.insert(parent_dir.to_path_buf()) {
                 let size = calculate_dir_size(entry.path())?;
                 total_size += size;
-                node_modules_folders.push((size, entry.into_path()));
+                let last_modified = get_last_modified_time(parent_dir)?;
+                let folder_name = parent_dir.file_name().unwrap_or_default().to_string_lossy();
+                node_modules_folders.push((size, folder_name.to_string(), last_modified));
             }
         }
     }
@@ -32,10 +36,16 @@ fn main() -> io::Result<()> {
     node_modules_folders.sort_by(|a, b| b.0.cmp(&a.0));
 
     // Print the table
-    println!("{:>15} {:<50}", "Size (MB)", "Path");
-    for (size, path) in node_modules_folders {
+    println!(
+        "{:>15} {:<30} {:<20}",
+        "Size (MB)", "Project", "Last Modified"
+    );
+    for (size, folder_name, last_modified) in node_modules_folders {
         let size_mb = size as f64 / 1_000_000.0;
-        println!("{:>15.2} {:<50}", size_mb, path.to_string_lossy());
+        println!(
+            "{:>15.2} {:<30} {:<20}",
+            size_mb, folder_name, last_modified
+        );
     }
 
     // Print total size
@@ -55,4 +65,17 @@ fn calculate_dir_size(path: &Path) -> std::io::Result<u64> {
         size += entry.metadata()?.len();
     }
     Ok(size)
+}
+
+fn get_last_modified_time(path: &Path) -> io::Result<String> {
+    let metadata = fs::metadata(path)?;
+    let last_modified = metadata.modified()?;
+    let now = SystemTime::now();
+    match now.duration_since(last_modified) {
+        Ok(duration) => {
+            let days = duration.as_secs() / 86_400; // seconds in a day
+            Ok(format!("{} days ago", days))
+        }
+        Err(_) => Ok("Time Error".to_string()),
+    }
 }
