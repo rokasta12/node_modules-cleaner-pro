@@ -1,13 +1,16 @@
 use dirs;
 use std::collections::HashSet;
+use std::io;
 use std::path::Path;
 use walkdir::{DirEntry, WalkDir};
 
-fn main() {
+fn main() -> io::Result<()> {
     let home_dir = dirs::home_dir().expect("Could not find home directory");
     let start_path = home_dir.join("documents/github/");
 
     let mut visited = HashSet::new();
+    let mut node_modules_folders = Vec::new();
+    let mut total_size = 0;
 
     for entry in WalkDir::new(&start_path)
         .min_depth(1)
@@ -18,16 +21,28 @@ fn main() {
         if is_node_modules_dir(&entry) {
             let parent_dir = entry.path().parent().unwrap_or_else(|| Path::new(""));
             if visited.insert(parent_dir.to_path_buf()) {
-                match calculate_dir_size(entry.path()) {
-                    Ok(size) => {
-                        let size_mb = size as f64 / 1_000_000.0;
-                        println!("{:.2} MB - {:?}", size_mb, entry.path());
-                    }
-                    Err(e) => eprintln!("Error calculating size for {:?}: {}", entry.path(), e),
-                }
+                let size = calculate_dir_size(entry.path())?;
+                total_size += size;
+                node_modules_folders.push((size, entry.into_path()));
             }
         }
     }
+
+    // Sort folders by size (largest to smallest)
+    node_modules_folders.sort_by(|a, b| b.0.cmp(&a.0));
+
+    // Print the table
+    println!("{:>15} {:<50}", "Size (MB)", "Path");
+    for (size, path) in node_modules_folders {
+        let size_mb = size as f64 / 1_000_000.0;
+        println!("{:>15.2} {:<50}", size_mb, path.to_string_lossy());
+    }
+
+    // Print total size
+    let total_size_mb = total_size as f64 / 1_000_000.0;
+    println!("\nTotal Size: {:.2} MB", total_size_mb);
+
+    Ok(())
 }
 
 fn is_node_modules_dir(entry: &DirEntry) -> bool {
